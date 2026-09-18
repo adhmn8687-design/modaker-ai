@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StudyScribe — turn class time into study time</title>
+    <meta name="description" content="StudyScribe turns lectures, notes, PDFs, and images into summaries, quizzes, assignments, and exam-ready notes." />
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='mark.svg') }}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/">
+          <span class="brand-mark"><i class="bi bi-stars"></i></span>
+          <span>Study<span>Scribe</span></span>
+        </a>
+        <div class="sidebar-label">Your workspace</div>
+        <nav class="side-nav">
+          <a class="side-link active" href="#workspace"><i class="bi bi-grid-1x2"></i><span>Workspace</span></a>
+          <a class="side-link" href="#record"><i class="bi bi-mic"></i><span>Record lecture</span><span class="nav-dot"></span></a>
+          <a class="side-link" href="#recent"><i class="bi bi-clock-history"></i><span>Recent outputs</span></a>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="mini-tip">
+            <span class="tip-icon"><i class="bi bi-lightbulb"></i></span>
+            <div><strong>Study smarter</strong><p>Start with one source. Refine from there.</p></div>
+          </div>
+          <div class="privacy-note"><i class="bi bi-shield-check"></i> Your key stays in this browser session.</div>
+        </div>
+      </aside>
+
+      <main class="main-content" id="workspace">
+        <header class="topbar">
+          <button class="mobile-menu" id="mobileMenu" aria-label="Open navigation"><i class="bi bi-list"></i></button>
+          <div class="breadcrumb"><span>Workspace</span><i class="bi bi-chevron-right"></i><strong>New study session</strong></div>
+          <div class="topbar-actions">
+            <button class="icon-button" id="helpButton" aria-label="About StudyScribe"><i class="bi bi-question-circle"></i></button>
+            <div class="avatar">AS</div>
+          </div>
+        </header>
+
+        <div class="content-wrap">
+          <section class="hero-row">
+            <div>
+              <div class="eyebrow"><span class="eyebrow-line"></span> AI study companion</div>
+              <h1>Turn class time<br /><em>into study time.</em></h1>
+              <p class="hero-copy">Bring your lecture, notes, or course material. StudyScribe shapes it into something you can actually use.</p>
+            </div>
+            <div class="session-chip"><span class="status-pulse"></span><span id="sessionState">Ready for a new session</span></div>
+          </section>
+
+          <section class="key-card" aria-label="Gemini API key">
+            <div class="key-symbol"><i class="bi bi-key"></i></div>
+            <div class="key-copy"><strong>Connect your Gemini key</strong><span>Bring your own key to power this session. It is never saved by StudyScribe.</span></div>
+            <div class="key-input-wrap">
+              <i class="bi bi-lock"></i>
+              <input id="apiKey" type="password" placeholder="Paste your Gemini API key" autocomplete="off" />
+              <button id="toggleKey" class="key-toggle" type="button" aria-label="Show API key"><i class="bi bi-eye"></i></button>
+            </div>
+            <button class="button button-dark" id="saveKey">Save for session <i class="bi bi-arrow-up-right"></i></button>
+          </section>
+
+          <section class="workspace-grid">
+            <div class="composer-column">
+              <div class="section-heading">
+                <div><span class="section-kicker">01 / Source material</span><h2>What are we studying?</h2></div>
+                <span class="shortcut">⌘ + ↵ to generate</span>
+              </div>
+              <div class="source-card">
+                <div class="source-tabs">
+                  <button class="source-tab active" data-tab="write"><i class="bi bi-pencil-square"></i> Write or paste</button>
+                  <button class="source-tab" data-tab="upload"><i class="bi bi-paperclip"></i> Upload file</button>
+                </div>
+                <div id="writePanel" class="tab-panel active">
+                  <textarea id="sourceText" rows="9" placeholder="Paste your lecture notes, textbook excerpt, or a question you want to explore..."></textarea>
+                  <div class="textarea-footer"><span><i class="bi bi-stars"></i> Tip: detailed source material leads to better study guides.</span><span id="wordCount">0 words</span></div>
+                </div>
+                <div id="uploadPanel" class="tab-panel">
+                  <label class="dropzone" id="dropzone" for="fileInput">
+                    <span class="upload-icon"><i class="bi bi-cloud-arrow-up"></i></span>
+                    <strong>Drop a PDF or image here</strong>
+                    <span>or <u>browse your files</u> · up to 25 MB</span>
+                    <input id="fileInput" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/*" hidden />
+                  </label>
+                  <div id="filePreview" class="file-preview d-none"></div>
+                </div>
+              </div>
+
+              <div class="section-heading action-heading">
+                <div><span class="section-kicker">02 / Study format</span><h2>Make it useful</h2></div>
+              </div>
+              <div class="action-grid">
+                <button class="action-card selected" data-action="summary"><span class="action-icon icon-violet"><i class="bi bi-brightness-high"></i></span><span><strong>Quick summary</strong><small>Get the big picture</small></span><i class="bi bi-check-circle-fill select-check"></i></button>
+                <button class="action-card" data-action="notes"><span class="action-icon icon-teal"><i class="bi bi-journal-text"></i></span><span><strong>Study notes</strong><small>Organize the details</small></span><i class="bi bi-circle select-check"></i></button>
+                <button class="action-card" data-action="quiz"><span class="action-icon icon-orange"><i class="bi bi-patch-question"></i></span><span><strong>Practice quiz</strong><small>Test your recall</small></span><i class="bi bi-circle select-check"></i></button>
+                <button class="action-card" data-action="assignment"><span class="action-icon icon-blue"><i class="bi bi-pencil"></i></span><span><strong>Assignment</strong><small>Put it into practice</small></span><i class="bi bi-circle select-check"></i></button>
+              </div>
+              <button class="button button-primary generate-button" id="generateButton"><span class="button-label">Generate study material</span><i class="bi bi-arrow-right"></i></button>
+              <div id="alert" class="alert-box d-none" role="alert"></div>
+            </div>
+
+            <aside class="right-column">
+              <div class="section-heading" id="record">
+                <div><span class="section-kicker">Live capture</span><h2>Record a lecture</h2></div>
+              </div>
+              <div class="record-card">
+                <div class="record-top"><span class="record-badge"><span class="record-dot"></span> Audio recorder</span><span id="timer">00:00</span></div>
+                <div class="waveform" id="waveform" aria-hidden="true">
+                  <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <p id="recordStatus">Record your professor, then turn the audio into a clean transcript.</p>
+                <button class="record-button" id="recordButton"><i class="bi bi-mic-fill"></i><span>Start recording</span></button>
+                <button class="transcribe-button d-none" id="transcribeButton"><i class="bi bi-soundwave"></i><span>Transcribe recording</span></button>
+              </div>
+
+              <div class="recent-card" id="recent">
+                <div class="recent-header"><h3>Recent outputs</h3><button id="clearRecent">Clear</button></div>
+                <div id="recentList">
+                  <div class="recent-item"><span class="recent-file purple"><i class="bi bi-file-earmark-text"></i></span><div><strong>Cell signaling</strong><small>Quick summary · just now</small></div><i class="bi bi-arrow-up-right recent-arrow"></i></div>
+                  <div class="recent-item"><span class="recent-file green"><i class="bi bi-soundwave"></i></span><div><strong>Bio 101 lecture</strong><small>Transcript · yesterday</small></div><i class="bi bi-arrow-up-right recent-arrow"></i></div>
+                  <div class="recent-item"><span class="recent-file orange"><i class="bi bi-filetype-pdf"></i></span><div><strong>Modern Europe</strong><small>Study notes · 2 days ago</small></div><i class="bi bi-arrow-up-right recent-arrow"></i></div>
+                </div>
+              </div>
+            </aside>
+          </section>
+
+          <section class="output-section" id="outputSection">
+            <div class="section-heading"><div><span class="section-kicker">03 / Your result</span><h2>Study material</h2></div><div class="output-actions d-none" id="outputActions"><button id="copyOutput"><i class="bi bi-copy"></i> Copy</button><button id="downloadOutput"><i class="bi bi-download"></i> Download</button></div></div>
+            <div class="output-card" id="outputCard">
+              <div class="empty-output"><span class="empty-icon"><i class="bi bi-stars"></i></span><h3>Your study guide will appear here</h3><p>Choose a format above and generate your first set of material.</p></div>
+            </div>
+          </section>
+        </div>
+        <footer class="footer"><span>StudyScribe</span><span>Built for better learning · Powered by Gemini</span></footer>
+      </main>
+    </div>
+    <div class="toast-message" id="toast"></div>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>

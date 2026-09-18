@@ -1,0 +1,23 @@
+kind = "web"
+previewPath = "/"
+title = "StudyScribe"
+description = "A focused student workspace that records lectures, processes text, images, and PDFs with Google Gemini, and turns study material into summaries, quizzes, assignments, and notes."
+version = "1.0.0"
+id = "artifacts/studyscribe"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22806
+
+[services.development]
+run = "pnpm --filter @workspace/studyscribe run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/studyscribe", "run", "build" ]
+serve = "python artifacts/studyscribe/app.py"
+
+[services.env]
+PORT = "22806"
+BASE_PATH = "/"

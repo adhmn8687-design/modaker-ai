@@ -1,0 +1,1 @@
+- [StudyScribe runtime](studyscribe-runtime.md) — Flask endpoints avoid the shared `/api` proxy path and use `/studyscribe-api/*`.
