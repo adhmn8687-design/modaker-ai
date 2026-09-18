@@ -40,6 +40,8 @@ StudyScribe is a Flask-powered student workspace that turns text, lectures, PDFs
 - Upload a PDF or image and use its contents as the source for any study format.
 - Record a lecture in the browser, transcribe it with Gemini, and place the transcript into the study composer.
 - Copy or download generated Markdown, with a lightweight recent-output list for the current session.
+- Five free AI credits reset daily, with a simulated rewarded ad that grants three more credits.
+- A provided Gemini key switches the workspace to unlimited mode and removes the ad control.
 
 ## User preferences
 

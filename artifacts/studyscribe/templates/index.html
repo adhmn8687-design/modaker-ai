@@ -42,6 +42,13 @@
           <button class="mobile-menu" id="mobileMenu" aria-label="Open navigation"><i class="bi bi-list"></i></button>
           <div class="breadcrumb"><span>Workspace</span><i class="bi bi-chevron-right"></i><strong>New study session</strong></div>
           <div class="topbar-actions">
+            <div class="credit-counter" id="creditCounter" title="Credits reset daily">
+              <span class="credit-spark"><i class="bi bi-lightning-charge-fill"></i></span>
+              <span class="credit-value" id="creditValue">5</span>
+              <span class="credit-label" id="creditLabel">credits left</span>
+            </div>
+            <button class="ad-button" id="adButton" type="button"><i class="bi bi-play-fill"></i> Watch Ad <span>(+3 Credits)</span></button>
+            <span class="byok-badge d-none" id="byokBadge"><i class="bi bi-infinity"></i> BYOK unlimited</span>
             <button class="icon-button" id="helpButton" aria-label="About StudyScribe"><i class="bi bi-question-circle"></i></button>
             <div class="avatar">AS</div>
           </div>
@@ -139,8 +146,20 @@
             </div>
           </section>
         </div>
-        <footer class="footer"><span>StudyScribe</span><span>Built for better learning · Powered by Gemini</span></footer>
+        <footer class="footer"><span>StudyScribe</span><span>Created &amp; Developed by Adham nasr</span><span>Built for better learning · Powered by Gemini</span></footer>
       </main>
+    </div>
+    <div class="ad-modal-backdrop d-none" id="adModal" role="dialog" aria-modal="true" aria-labelledby="adTitle">
+      <div class="ad-modal">
+        <button class="ad-close" id="adClose" type="button" aria-label="Close rewarded ad"><i class="bi bi-x-lg"></i></button>
+        <span class="ad-modal-icon"><i class="bi bi-play-fill"></i></span>
+        <span class="section-kicker">Rewarded study break</span>
+        <h2 id="adTitle">Watch a short ad</h2>
+        <p id="adMessage">Stay with the simulated ad for a few seconds to earn 3 more study credits.</p>
+        <div class="ad-progress"><span id="adProgress"></span></div>
+        <button class="button button-primary ad-start" id="adStart" type="button"><i class="bi bi-play-fill"></i><span>Start ad</span></button>
+        <small>Demo reward · no real ad network connected</small>
+      </div>
     </div>
     <div class="toast-message" id="toast"></div>
     <script src="{{ url_for('static', filename='app.js') }}"></script>

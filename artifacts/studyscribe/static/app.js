@@ -16,6 +16,62 @@ function getApiKey() {
   return sessionStorage.getItem("studyscribe_gemini_key") || $("#apiKey").value.trim();
 }
 
+function hasByok(apiKey = getApiKey()) {
+  return typeof apiKey === "string" && apiKey.trim().length >= 10;
+}
+
+function todayKey() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function readCredits() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("studyscribe_credits") || "null");
+    if (saved?.date === todayKey() && Number.isFinite(saved.balance)) return Math.max(0, saved.balance);
+  } catch (error) {
+    // Fall back to the daily allowance if browser storage is unavailable.
+  }
+  writeCredits(5);
+  return 5;
+}
+
+function writeCredits(balance) {
+  try { localStorage.setItem("studyscribe_credits", JSON.stringify({ date: todayKey(), balance })); } catch (error) {}
+}
+
+function refreshCredits() {
+  state.credits = readCredits();
+  const unlimited = hasByok();
+  $("#creditValue").textContent = unlimited ? "∞" : state.credits;
+  $("#creditLabel").textContent = unlimited ? "unlimited" : state.credits === 1 ? "credit left" : "credits left";
+  $("#adButton").classList.toggle("d-none", unlimited);
+  $("#byokBadge").classList.toggle("d-none", !unlimited);
+}
+
+function spendCredit() {
+  if (hasByok()) return false;
+  if (state.credits <= 0) return null;
+  state.credits -= 1;
+  writeCredits(state.credits);
+  refreshCredits();
+  return true;
+}
+
+function refundCredit(charged) {
+  if (charged === true && !hasByok()) {
+    state.credits += 1;
+    writeCredits(state.credits);
+    refreshCredits();
+  }
+}
+
+function addCredits(amount) {
+  state.credits = Math.min(99, readCredits() + amount);
+  writeCredits(state.credits);
+  refreshCredits();
+}
+
 function showToast(message) {
   const toast = $("#toast");
   toast.textContent = message;
@@ -90,6 +146,8 @@ async function generate() {
   if (!apiKey) return showAlert("Add your Gemini API key at the top to start generating.");
   const sourceText = $("#sourceText").value.trim();
   if (!sourceText && !state.selectedFile) return showAlert("Paste some material or upload a PDF/image first.");
+  const charged = spendCredit();
+  if (charged === null) return showAlert("You’re out of free credits for today. Watch the rewarded ad above to earn 3 more.");
   setLoading(true);
   try {
     let response;
@@ -112,6 +170,7 @@ async function generate() {
     $("#sessionState").textContent = "Study material ready";
     showToast("Your study material is ready.");
   } catch (error) {
+    refundCredit(charged);
     showAlert(error.message);
   } finally {
     setLoading(false);
@@ -165,6 +224,11 @@ function stopRecording() {
 async function transcribe() {
   if (!state.recording) return;
   const button = $("#transcribeButton");
+  const charged = spendCredit();
+  if (charged === null) {
+    showAlert("You’re out of free credits for today. Watch the rewarded ad above to earn 3 more.");
+    return;
+  }
   button.disabled = true;
   button.querySelector("span").textContent = "Transcribing with Gemini";
   try {
@@ -187,6 +251,7 @@ async function transcribe() {
     showToast("Transcript added to your source.");
     document.querySelector(".composer-column").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
+    refundCredit(charged);
     showAlert(error.message);
   } finally {
     button.disabled = false;
@@ -194,14 +259,56 @@ async function transcribe() {
   }
 }
 
+function openAdModal() {
+  if (hasByok()) return showToast("BYOK is active — you already have unlimited access.");
+  clearAlert();
+  $("#adModal").classList.remove("d-none");
+  $("#adStart").disabled = false;
+  $("#adStart").querySelector("span").textContent = "Start ad";
+  $("#adStart").querySelector("i").className = "bi bi-play-fill";
+  $("#adMessage").textContent = "Stay with the simulated ad for a few seconds to earn 3 more study credits.";
+  $("#adProgress").style.width = "0%";
+}
+
+function closeAdModal() {
+  window.clearInterval(state.adTimer);
+  $("#adModal").classList.add("d-none");
+}
+
+function startRewardedAd() {
+  const button = $("#adStart");
+  button.disabled = true;
+  let remaining = 3;
+  $("#adMessage").textContent = `Simulated ad playing… ${remaining} seconds remaining.`;
+  $("#adProgress").style.width = "0%";
+  state.adTimer = window.setInterval(() => {
+    remaining -= 1;
+    $("#adProgress").style.width = `${((3 - remaining) / 3) * 100}%`;
+    if (remaining > 0) {
+      $("#adMessage").textContent = `Simulated ad playing… ${remaining} second${remaining === 1 ? "" : "s"} remaining.`;
+    } else {
+      window.clearInterval(state.adTimer);
+      addCredits(3);
+      $("#adProgress").style.width = "100%";
+      $("#adMessage").textContent = "Reward unlocked. 3 credits were added to your daily balance.";
+      button.querySelector("span").textContent = "Credits added";
+      button.querySelector("i").className = "bi bi-check2";
+      window.setTimeout(() => { closeAdModal(); showToast("3 credits added."); }, 850);
+    }
+  }, 1000);
+}
+
 function setup() {
   const storedKey = sessionStorage.getItem("studyscribe_gemini_key");
   if (storedKey) { $("#apiKey").value = storedKey; $("#sessionState").textContent = "Gemini key connected"; }
+  refreshCredits();
+  $("#apiKey").addEventListener("input", refreshCredits);
   $("#saveKey").addEventListener("click", () => {
     const key = $("#apiKey").value.trim();
     if (!key) return showAlert("Paste your Gemini API key first.");
     sessionStorage.setItem("studyscribe_gemini_key", key);
     $("#sessionState").textContent = "Gemini key connected";
+    refreshCredits();
     showToast("Key saved for this browser session.");
   });
   $("#toggleKey").addEventListener("click", () => {
@@ -227,6 +334,10 @@ function setup() {
     });
   }));
   $("#generateButton").addEventListener("click", generate);
+  $("#adButton").addEventListener("click", openAdModal);
+  $("#adClose").addEventListener("click", closeAdModal);
+  $("#adStart").addEventListener("click", startRewardedAd);
+  $("#adModal").addEventListener("click", (event) => { if (event.target === $("#adModal")) closeAdModal(); });
   $("#recordButton").addEventListener("click", () => state.recorder?.state === "recording" ? stopRecording() : startRecording());
   $("#transcribeButton").addEventListener("click", transcribe);
   $("#fileInput").addEventListener("change", (event) => {
