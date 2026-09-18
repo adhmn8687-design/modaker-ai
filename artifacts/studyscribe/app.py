@@ -1,4 +1,6 @@
 import os
+import io
+import time
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
@@ -69,26 +71,68 @@ def valid_api_key(value):
     return isinstance(value, str) and len(value.strip()) >= 10
 
 
-def get_client(api_key):
-    if not valid_api_key(api_key):
-        raise ValueError("Add your Gemini API key before generating study material.")
-    return genai.Client(api_key=api_key.strip())
+def resolve_api_key(api_key=""):
+    provided_key = api_key.strip() if isinstance(api_key, str) else ""
+    return provided_key or os.environ.get("GEMINI_API_KEY", "").strip()
+
+
+def get_client(api_key=""):
+    resolved_key = resolve_api_key(api_key)
+    if not valid_api_key(resolved_key):
+        raise ValueError(
+            "StudyScribe is not connected to Gemini yet. Add a personal key or configure GEMINI_API_KEY."
+        )
+    return genai.Client(api_key=resolved_key)
+
+
+def file_state_value(file):
+    state = getattr(file, "state", None)
+    return getattr(state, "value", str(state or "")).upper()
+
+
+def wait_for_file(client, file):
+    if file_state_value(file) in {"", "ACTIVE"}:
+        return file
+    for _ in range(60):
+        if file_state_value(file) == "FAILED":
+            details = getattr(file, "error", None)
+            raise RuntimeError(f"Gemini could not process this file. {details or 'The file processor rejected it.'}")
+        if file_state_value(file) == "ACTIVE":
+            return file
+        time.sleep(0.5)
+        file = client.files.get(name=file.name)
+    raise TimeoutError("Gemini took too long to finish processing this file. Try a smaller document.")
 
 
 def generate_text(api_key, prompt, attachment=None):
     client = get_client(api_key)
-    contents = [prompt]
-    if attachment:
-        contents.append(
-            types.Part.from_bytes(
-                data=attachment["data"],
-                mime_type=attachment["mime_type"],
-            )
+    if not attachment:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt],
         )
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=contents,
-    )
+    else:
+        uploaded_file = None
+        try:
+            stream = io.BytesIO(attachment["data"])
+            upload_config = types.UploadFileConfig(
+                mime_type=attachment["mime_type"],
+                display_name=attachment.get("filename", "studyscribe-source"),
+            )
+            uploaded_file = wait_for_file(
+                client,
+                client.files.upload(file=stream, config=upload_config),
+            )
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[prompt, uploaded_file],
+            )
+        finally:
+            if uploaded_file and getattr(uploaded_file, "name", None):
+                try:
+                    client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    app.logger.warning("Gemini file cleanup failed", exc_info=True)
     if not response.text:
         raise RuntimeError("Gemini returned an empty response. Try again with more material.")
     return response.text.strip()
@@ -145,14 +189,25 @@ def analyze_file():
     if not data:
         return error("The selected file is empty.")
     try:
-        mime_type = upload.mimetype or (
-            "application/pdf" if extension == "pdf" else f"image/{'jpeg' if extension == 'jpg' else extension}"
+        mime_type = (
+            "application/pdf"
+            if extension == "pdf"
+            else f"image/{'jpeg' if extension in {'jpg', 'jpeg'} else extension}"
         )
         prompt = (
             PROMPTS[action]
-            + "\nThe attached file is the source material. If it is an image, read visible text and diagrams carefully."
+            + """
+The attached source may be a scanned or image-heavy PDF. Use Gemini vision OCR page by page.
+Read visible text, diagrams, equations, subscripts, superscripts, symbols, and chemical formulas
+carefully. Preserve the meaning of handwritten or photographed notes, and do not skip pages
+just because they contain little machine-readable text.
+"""
         )
-        result = generate_text(api_key, prompt, {"data": data, "mime_type": mime_type})
+        result = generate_text(
+            api_key,
+            prompt,
+            {"data": data, "mime_type": mime_type, "filename": filename},
+        )
         return jsonify({"result": result, "action": action, "filename": filename})
     except ValueError as exc:
         return error(str(exc))
@@ -175,7 +230,11 @@ def transcribe():
         mime_type = upload.mimetype or "audio/webm"
         prompt = """Transcribe this lecture recording accurately.
 Return only the transcript, with paragraph breaks when the speaker changes topics. Preserve technical terms and do not summarize or add commentary."""
-        transcript = generate_text(api_key, prompt, {"data": data, "mime_type": mime_type})
+        transcript = generate_text(
+            api_key,
+            prompt,
+            {"data": data, "mime_type": mime_type, "filename": upload.filename},
+        )
         return jsonify({"transcript": transcript})
     except ValueError as exc:
         return error(str(exc))

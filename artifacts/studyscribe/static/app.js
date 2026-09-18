@@ -89,6 +89,15 @@ function clearAlert() {
   $("#alert").classList.add("d-none");
 }
 
+function showMicPermissionHelp(message) {
+  $("#micHelpMessage").textContent = message;
+  $("#microphoneHelp").classList.remove("d-none");
+}
+
+function closeMicPermissionHelp() {
+  $("#microphoneHelp").classList.add("d-none");
+}
+
 function escapeHtml(value) {
   return value.replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
@@ -143,7 +152,6 @@ function addRecentItem(title, subtitle, action) {
 async function generate() {
   clearAlert();
   const apiKey = getApiKey();
-  if (!apiKey) return showAlert("Add your Gemini API key at the top to start generating.");
   const sourceText = $("#sourceText").value.trim();
   if (!sourceText && !state.selectedFile) return showAlert("Paste some material or upload a PDF/image first.");
   const charged = spendCredit();
@@ -185,8 +193,24 @@ function updateTimer() {
 
 async function startRecording() {
   clearAlert();
-  if (!getApiKey()) return showAlert("Add your Gemini API key before recording so the transcript can be created.");
-  if (!navigator.mediaDevices?.getUserMedia) return showAlert("Audio recording is not supported in this browser.");
+  if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    const message = "Microphone access requires a secure connection. Open StudyScribe over HTTPS, then try again.";
+    showAlert(message);
+    showMicPermissionHelp(message);
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const message = "This browser or Android WebView does not expose microphone access.";
+    showAlert(message);
+    showMicPermissionHelp(message);
+    return;
+  }
+  if (!window.MediaRecorder) {
+    const message = "Audio recording is not supported in this browser. Try an updated Chrome, Safari, or Firefox.";
+    showAlert(message);
+    showMicPermissionHelp(message);
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     state.chunks = [];
@@ -209,7 +233,16 @@ async function startRecording() {
     $("#recordButton").querySelector("i").className = "bi bi-stop-fill";
     $("#recordStatus").textContent = "Listening… your lecture is being captured in this browser.";
   } catch (error) {
-    showAlert("Microphone access was blocked. Allow microphone access and try again.");
+    const messageByName = {
+      NotAllowedError: "Microphone permission was denied or blocked for this site.",
+      PermissionDeniedError: "Microphone permission was denied or blocked for this site.",
+      NotFoundError: "No microphone was found. Connect a microphone and try again.",
+      NotReadableError: "The microphone is busy or unavailable. Close other recording apps and try again.",
+      SecurityError: "Your browser blocked microphone access because this page is not secure.",
+    };
+    const message = messageByName[error.name] || "The microphone could not be opened on this device.";
+    showAlert(`${message} Use the permission steps below, then reload StudyScribe.`);
+    showMicPermissionHelp(message);
   }
 }
 
@@ -301,8 +334,12 @@ function startRewardedAd() {
 function setup() {
   const storedKey = sessionStorage.getItem("studyscribe_gemini_key");
   if (storedKey) { $("#apiKey").value = storedKey; $("#sessionState").textContent = "Gemini key connected"; }
+  if (!storedKey) $("#sessionState").textContent = "Using StudyScribe secure key";
   refreshCredits();
-  $("#apiKey").addEventListener("input", refreshCredits);
+  $("#apiKey").addEventListener("input", () => {
+    refreshCredits();
+    $("#sessionState").textContent = hasByok() ? "Personal Gemini key ready" : "Using StudyScribe secure key";
+  });
   $("#saveKey").addEventListener("click", () => {
     const key = $("#apiKey").value.trim();
     if (!key) return showAlert("Paste your Gemini API key first.");
@@ -338,6 +375,10 @@ function setup() {
   $("#adClose").addEventListener("click", closeAdModal);
   $("#adStart").addEventListener("click", startRewardedAd);
   $("#adModal").addEventListener("click", (event) => { if (event.target === $("#adModal")) closeAdModal(); });
+  $("#micHelpClose").addEventListener("click", closeMicPermissionHelp);
+  $("#micHelpDone").addEventListener("click", closeMicPermissionHelp);
+  $("#microphoneHelp").addEventListener("click", (event) => { if (event.target === $("#microphoneHelp")) closeMicPermissionHelp(); });
+  $("#helpButton").addEventListener("click", () => $("#settings").scrollIntoView({ behavior: "smooth", block: "start" }));
   $("#recordButton").addEventListener("click", () => state.recorder?.state === "recording" ? stopRecording() : startRecording());
   $("#transcribeButton").addEventListener("click", transcribe);
   $("#fileInput").addEventListener("change", (event) => {

@@ -9,7 +9,7 @@ StudyScribe is a Flask-powered student workspace that turns text, lectures, PDFs
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- The only user credential is a BYOK Gemini API key entered in the browser. StudyScribe keeps it in `sessionStorage` and sends it only with the current request.
+- The optional user credential is a BYOK Gemini API key entered in the browser. StudyScribe keeps it in `sessionStorage` and sends it only with the current request; default sessions use the `GEMINI_API_KEY` Replit Secret on Flask.
 
 ## Stack
 
@@ -30,7 +30,7 @@ StudyScribe is a Flask-powered student workspace that turns text, lectures, PDFs
 ## Architecture decisions
 
 - BYOK is request-scoped: the browser holds the key only in `sessionStorage`, and the Flask app does not save it.
-- Gemini handles multimodal inputs directly so PDFs, images, and lecture audio use one consistent generation path.
+- Gemini handles multimodal inputs through the modern Files API so PDFs, scanned pages, images, and lecture audio use one consistent generation path with server-side OCR.
 - The browser records audio with `MediaRecorder`, then posts the resulting WebM blob to Flask for transcription.
 - Uploaded bytes are processed in memory with a 25 MB limit; there is no file library or database to clean up.
 
@@ -49,6 +49,7 @@ No additional preferences recorded.
 
 - StudyScribe uses `/studyscribe-api/*` instead of `/api/*` because the workspace already routes `/api` to the shared API service.
 - Audio recording requires a browser permission and a secure browser context.
+- Mobile recording failures open device-specific permission guidance for Android Chrome and iPhone/iPad Safari.
 - Gemini failures are surfaced as explicit error messages; there is no silent fallback or mocked generation.
 
 ## Pointers

@@ -2,7 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f8f8fc" />
     <title>StudyScribe — turn class time into study time</title>
     <meta name="description" content="StudyScribe turns lectures, notes, PDFs, and images into summaries, quizzes, assignments, and exam-ready notes." />
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='mark.svg') }}" />
@@ -27,6 +28,7 @@
           <a class="side-link active" href="#workspace"><i class="bi bi-grid-1x2"></i><span>Workspace</span></a>
           <a class="side-link" href="#record"><i class="bi bi-mic"></i><span>Record lecture</span><span class="nav-dot"></span></a>
           <a class="side-link" href="#recent"><i class="bi bi-clock-history"></i><span>Recent outputs</span></a>
+          <a class="side-link" href="#settings"><i class="bi bi-sliders"></i><span>Settings</span></a>
         </nav>
         <div class="sidebar-bottom">
           <div class="mini-tip">
@@ -49,7 +51,7 @@
             </div>
             <button class="ad-button" id="adButton" type="button"><i class="bi bi-play-fill"></i> Watch Ad <span>(+3 Credits)</span></button>
             <span class="byok-badge d-none" id="byokBadge"><i class="bi bi-infinity"></i> BYOK unlimited</span>
-            <button class="icon-button" id="helpButton" aria-label="About StudyScribe"><i class="bi bi-question-circle"></i></button>
+            <button class="icon-button" id="helpButton" type="button" aria-label="Open StudyScribe settings"><i class="bi bi-gear"></i></button>
             <div class="avatar">AS</div>
           </div>
         </header>
@@ -66,7 +68,7 @@
 
           <section class="key-card" aria-label="Gemini API key">
             <div class="key-symbol"><i class="bi bi-key"></i></div>
-            <div class="key-copy"><strong>Connect your Gemini key</strong><span>Bring your own key to power this session. It is never saved by StudyScribe.</span></div>
+             <div class="key-copy"><strong>Optional: use your own Gemini key</strong><span>StudyScribe includes a secure server key. Add yours for BYOK Unlimited access; it stays in this browser session.</span></div>
             <div class="key-input-wrap">
               <i class="bi bi-lock"></i>
               <input id="apiKey" type="password" placeholder="Paste your Gemini API key" autocomplete="off" />
@@ -145,8 +147,27 @@
               <div class="empty-output"><span class="empty-icon"><i class="bi bi-stars"></i></span><h3>Your study guide will appear here</h3><p>Choose a format above and generate your first set of material.</p></div>
             </div>
           </section>
+          <section class="settings-section" id="settings">
+            <div class="section-heading">
+              <div><span class="section-kicker">Workspace settings</span><h2>StudyScribe settings</h2></div>
+            </div>
+            <div class="settings-card">
+              <div class="settings-item">
+                <span class="settings-icon icon-violet"><i class="bi bi-shield-check"></i></span>
+                <div><strong>Secure Gemini access</strong><p>Default sessions use the protected StudyScribe server key. Your personal key is optional and remains in this browser session.</p></div>
+              </div>
+              <div class="settings-item">
+                <span class="settings-icon icon-orange"><i class="bi bi-lightning-charge"></i></span>
+                <div><strong>Daily credits</strong><p>Default sessions start with 5 credits each day. Watch the rewarded video to add 3 more.</p></div>
+              </div>
+              <div class="settings-item developer-item">
+                <span class="settings-icon icon-teal"><i class="bi bi-code-slash"></i></span>
+                <div><strong>Created &amp; Developed by Adham</strong><p>Built for focused learning, cleaner notes, and better exam preparation.</p></div>
+              </div>
+            </div>
+          </section>
         </div>
-        <footer class="footer"><span>StudyScribe</span><span>Created &amp; Developed by Adham nasr</span><span>Built for better learning · Powered by Gemini</span></footer>
+        <footer class="footer"><span>StudyScribe</span><span>Created &amp; Developed by Adham</span><span>Built for better learning · Powered by Gemini</span></footer>
       </main>
     </div>
     <div class="ad-modal-backdrop d-none" id="adModal" role="dialog" aria-modal="true" aria-labelledby="adTitle">
@@ -159,6 +180,20 @@
         <div class="ad-progress"><span id="adProgress"></span></div>
         <button class="button button-primary ad-start" id="adStart" type="button"><i class="bi bi-play-fill"></i><span>Start ad</span></button>
         <small>Demo reward · no real ad network connected</small>
+      </div>
+    </div>
+    <div class="mic-help-backdrop d-none" id="microphoneHelp" role="dialog" aria-modal="true" aria-labelledby="micHelpTitle">
+      <div class="mic-help-modal">
+        <button class="ad-close" id="micHelpClose" type="button" aria-label="Close microphone help"><i class="bi bi-x-lg"></i></button>
+        <span class="ad-modal-icon mic-help-icon"><i class="bi bi-mic-mute-fill"></i></span>
+        <span class="section-kicker">Microphone permission</span>
+        <h2 id="micHelpTitle">Allow microphone access</h2>
+        <p id="micHelpMessage">StudyScribe needs microphone access to record a lecture.</p>
+        <div class="permission-steps">
+          <strong>Android / Chrome</strong><span>Tap the lock icon beside the address, open Permissions, set Microphone to Allow, then reload.</span>
+          <strong>iPhone / iPad</strong><span>Open Settings → Safari → Microphone, choose Allow, then return to StudyScribe and reload.</span>
+        </div>
+        <button class="button button-primary ad-start" type="button" id="micHelpDone">Got it</button>
       </div>
     </div>
     <div class="toast-message" id="toast"></div>
