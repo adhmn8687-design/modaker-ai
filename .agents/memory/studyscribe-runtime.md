@@ -15,8 +15,8 @@ The free allowance is intentionally browser-scoped: five credits are stored with
 
 **How to apply:** If credits need anti-abuse guarantees or cross-device persistence later, add authenticated server-side accounting instead of expanding the localStorage model.
 
-Gemini file inputs use the Files API with processing-state polling and cleanup rather than inline byte parts. PDF prompts explicitly request page-by-page vision OCR for scanned, image-heavy, and chemistry material.
+PDF and image inputs are extracted locally first with pypdf and Tesseract OCR. Sparse or image-heavy inputs then use the Gemini Files API with processing-state polling and cleanup rather than being passed as inline byte parts. The browser converts recordings to mono WAV before the audio route.
 
-**Why:** Inline PDF parts were the source of client errors and could under-read documents whose content was primarily scanned imagery.
+**Why:** Inline PDF parts were the source of client errors and could under-read documents whose content was primarily scanned imagery; local extraction makes text-first behavior deterministic while the Files API preserves diagrams and handwriting.
 
-**How to apply:** Preserve the upload → wait for ACTIVE → generate → delete lifecycle when changing file formats or prompts.
+**How to apply:** Preserve the extract-first → combine all file context → Files API fallback lifecycle, and keep the upload → wait for ACTIVE → generate → delete lifecycle for binary fallbacks.

@@ -1,6 +1,6 @@
 const state = {
   action: "summary",
-  selectedFile: null,
+  selectedFiles: [],
   recording: null,
   recorder: null,
   chunks: [],
@@ -153,28 +153,30 @@ async function generate() {
   clearAlert();
   const apiKey = getApiKey();
   const sourceText = $("#sourceText").value.trim();
-  if (!sourceText && !state.selectedFile) return showAlert("Paste some material or upload a PDF/image first.");
+  if (!sourceText && !state.selectedFiles.length) return showAlert("Paste some material or upload a PDF/image first.");
   const charged = spendCredit();
   if (charged === null) return showAlert("You’re out of free credits for today. Watch the rewarded ad above to earn 3 more.");
   setLoading(true);
   try {
     let response;
-    if (state.selectedFile) {
+    if (state.selectedFiles.length) {
       const form = new FormData();
-      form.append("api_key", apiKey);
+      form.append("apiKey", apiKey);
       form.append("action", state.action);
-      form.append("file", state.selectedFile);
+      form.append("content", sourceText);
+      state.selectedFiles.forEach((file) => form.append("files", file, file.name));
       response = await fetch("/studyscribe-api/analyze-file", { method: "POST", body: form });
     } else {
       response = await fetch("/studyscribe-api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: apiKey, action: state.action, content: sourceText }),
+        body: JSON.stringify({ apiKey, action: state.action, content: sourceText }),
       });
     }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Something went wrong.");
-    renderResult(data.result, state.action, data.filename || "Pasted material");
+    const sourceLabel = data.filenames?.length ? data.filenames.join(", ") : "Pasted material";
+    renderResult(data.result, state.action, sourceLabel);
     $("#sessionState").textContent = "Study material ready";
     showToast("Your study material is ready.");
   } catch (error) {
@@ -211,11 +213,20 @@ async function startRecording() {
     showMicPermissionHelp(message);
     return;
   }
+  let stream;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     state.chunks = [];
-    state.recorder = new MediaRecorder(stream);
+    const supportedMimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+    const mimeType = supportedMimeTypes.find((type) => typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(type));
+    state.recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     state.recorder.ondataavailable = (event) => event.data.size && state.chunks.push(event.data);
+    state.recorder.onerror = () => {
+      window.clearInterval(state.timer);
+      stream.getTracks().forEach((track) => track.stop());
+      showMicPermissionHelp("The browser stopped the recording unexpectedly. Check microphone permissions and try again.");
+      showAlert("The browser stopped the recording unexpectedly. Check microphone permissions and try again.");
+    };
     state.recorder.onstop = () => {
       stream.getTracks().forEach((track) => track.stop());
       state.recording = new Blob(state.chunks, { type: state.recorder.mimeType || "audio/webm" });
@@ -233,6 +244,7 @@ async function startRecording() {
     $("#recordButton").querySelector("i").className = "bi bi-stop-fill";
     $("#recordStatus").textContent = "Listening… your lecture is being captured in this browser.";
   } catch (error) {
+    stream?.getTracks().forEach((track) => track.stop());
     const messageByName = {
       NotAllowedError: "Microphone permission was denied or blocked for this site.",
       PermissionDeniedError: "Microphone permission was denied or blocked for this site.",
@@ -254,6 +266,50 @@ function stopRecording() {
   $("#recordButton").classList.remove("active");
 }
 
+function writeWavString(view, offset, value) {
+  for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+}
+
+function encodeWav(audioBuffer) {
+  const samples = audioBuffer.length;
+  const channels = audioBuffer.numberOfChannels;
+  const buffer = new ArrayBuffer(44 + samples * 2);
+  const view = new DataView(buffer);
+  writeWavString(view, 0, "RIFF");
+  view.setUint32(4, 36 + samples * 2, true);
+  writeWavString(view, 8, "WAVE");
+  writeWavString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, audioBuffer.sampleRate, true);
+  view.setUint32(28, audioBuffer.sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeWavString(view, 36, "data");
+  view.setUint32(40, samples * 2, true);
+  for (let index = 0; index < samples; index += 1) {
+    let sample = 0;
+    for (let channel = 0; channel < channels; channel += 1) sample += audioBuffer.getChannelData(channel)[index] || 0;
+    sample = Math.max(-1, Math.min(1, sample / channels));
+    view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  return new Blob([view], { type: "audio/wav" });
+}
+
+async function convertRecordingToWav(blob) {
+  if (blob.type === "audio/wav" || blob.type === "audio/x-wav") return blob;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) throw new Error("This browser cannot convert the recording to WAV. Try an updated Chrome, Safari, or Firefox.");
+  const context = new AudioContextClass();
+  try {
+    const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    return encodeWav(decoded);
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
 async function transcribe() {
   if (!state.recording) return;
   const button = $("#transcribeButton");
@@ -263,11 +319,13 @@ async function transcribe() {
     return;
   }
   button.disabled = true;
-  button.querySelector("span").textContent = "Transcribing with Gemini";
+  button.querySelector("span").textContent = "Preparing WAV audio";
   try {
+    const wavRecording = await convertRecordingToWav(state.recording);
     const form = new FormData();
-    form.append("api_key", getApiKey());
-    form.append("audio", state.recording, "lecture.webm");
+    form.append("apiKey", getApiKey());
+    form.append("audio", wavRecording, "lecture.wav");
+    button.querySelector("span").textContent = "Transcribing with Gemini";
     const response = await fetch("/studyscribe-api/transcribe", { method: "POST", body: form });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Transcription failed.");
@@ -381,22 +439,26 @@ function setup() {
   $("#helpButton").addEventListener("click", () => $("#settings").scrollIntoView({ behavior: "smooth", block: "start" }));
   $("#recordButton").addEventListener("click", () => state.recorder?.state === "recording" ? stopRecording() : startRecording());
   $("#transcribeButton").addEventListener("click", transcribe);
-  $("#fileInput").addEventListener("change", (event) => {
-    state.selectedFile = event.target.files[0] || null;
-    if (state.selectedFile) {
-      $("#filePreview").innerHTML = `<i class="bi bi-file-earmark-check"></i><strong>${escapeHtml(state.selectedFile.name)}</strong> <span class="ms-1">· ${(state.selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>`;
-      $("#filePreview").classList.remove("d-none");
+  const renderSelectedFiles = (files) => {
+    state.selectedFiles = files.slice(0, 10);
+    if (!state.selectedFiles.length) {
+      $("#filePreview").classList.add("d-none");
+      $("#filePreview").innerHTML = "";
+      return;
     }
+    $("#filePreview").innerHTML = state.selectedFiles.map((file) => `
+      <div class="file-preview-item"><i class="bi bi-file-earmark-check"></i><strong>${escapeHtml(file.name)}</strong><span>· ${(file.size / 1024 / 1024).toFixed(2)} MB</span></div>
+    `).join("");
+    $("#filePreview").classList.remove("d-none");
+  };
+  $("#fileInput").addEventListener("change", (event) => {
+    renderSelectedFiles([...event.target.files]);
   });
   const dropzone = $("#dropzone");
   ["dragenter", "dragover"].forEach((eventName) => dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.add("dragging"); }));
   ["dragleave", "drop"].forEach((eventName) => dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.remove("dragging"); }));
   dropzone.addEventListener("drop", (event) => {
-    state.selectedFile = event.dataTransfer.files[0] || null;
-    if (state.selectedFile) {
-      $("#filePreview").innerHTML = `<i class="bi bi-file-earmark-check"></i><strong>${escapeHtml(state.selectedFile.name)}</strong> <span class="ms-1">· ${(state.selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>`;
-      $("#filePreview").classList.remove("d-none");
-    }
+    renderSelectedFiles([...event.dataTransfer.files]);
   });
   $("#copyOutput").addEventListener("click", async () => { await navigator.clipboard.writeText(state.lastOutput); showToast("Copied to clipboard."); });
   $("#downloadOutput").addEventListener("click", () => {

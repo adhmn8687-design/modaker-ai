@@ -30,7 +30,7 @@ StudyScribe is a Flask-powered student workspace that turns text, lectures, PDFs
 ## Architecture decisions
 
 - BYOK is request-scoped: the browser holds the key only in `sessionStorage`, and the Flask app does not save it.
-- Gemini handles multimodal inputs through the modern Files API so PDFs, scanned pages, images, and lecture audio use one consistent generation path with server-side OCR.
+- PDFs and images are extracted locally first with pypdf and Tesseract OCR; files with sparse or image-heavy content fall back to the modern Gemini Files API. Audio is converted to WAV in the browser before transcription.
 - The browser records audio with `MediaRecorder`, then posts the resulting WebM blob to Flask for transcription.
 - Uploaded bytes are processed in memory with a 25 MB limit; there is no file library or database to clean up.
 
@@ -38,6 +38,7 @@ StudyScribe is a Flask-powered student workspace that turns text, lectures, PDFs
 
 - Paste lecture notes or textbook material and generate a summary, study notes, quiz, or assignment.
 - Upload a PDF or image and use its contents as the source for any study format.
+- Select multiple PDFs or screenshots at once; extracted content is combined into one study context.
 - Record a lecture in the browser, transcribe it with Gemini, and place the transcript into the study composer.
 - Copy or download generated Markdown, with a lightweight recent-output list for the current session.
 - Five free AI credits reset daily, with a simulated rewarded ad that grants three more credits.

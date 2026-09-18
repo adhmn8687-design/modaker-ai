@@ -102,8 +102,8 @@ textarea::placeholder { color: #b8b7c1; }
 .dropzone:hover, .dropzone.dragging { border-color: var(--purple); background: #f6f4ff; }
 .dropzone strong { color: #5e5d6e; font-size: 12px; }
 .upload-icon { color: var(--purple); background: #ebe9ff; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; font-size: 18px; margin-bottom: 3px; }
-.file-preview { background: #f5f4ff; border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 11px; color: #5f5d72; }
-.file-preview i { color: var(--purple); margin-right: 7px; }
+.file-preview { background: #f5f4ff; border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 11px; color: #5f5d72; display: grid; gap: 7px; }
+.file-preview-item { display: flex; align-items: center; gap: 6px; min-width: 0; }.file-preview-item i { color: var(--purple); }.file-preview-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.file-preview-item span { color: #9997a7; flex-shrink: 0; }
 .action-heading { margin-top: 33px; }
 .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .action-card { border: 1px solid var(--line); background: #fff; border-radius: 10px; text-align: left; padding: 13px 12px; display: flex; align-items: center; gap: 10px; position: relative; transition: .2s ease; }

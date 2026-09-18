@@ -6,11 +6,16 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 from google import genai
 from google.genai import types
+from pypdf import PdfReader
+from PIL import Image
+import pytesseract
 from werkzeug.utils import secure_filename
 
 
 BASE_DIR = Path(__file__).resolve().parent
 MAX_FILE_SIZE = 25 * 1024 * 1024
+MAX_UPLOAD_COUNT = 10
+MIN_EXTRACTED_TEXT = 24
 ALLOWED_EXTENSIONS = {
     "pdf",
     "png",
@@ -104,33 +109,80 @@ def wait_for_file(client, file):
     raise TimeoutError("Gemini took too long to finish processing this file. Try a smaller document.")
 
 
-def generate_text(api_key, prompt, attachment=None):
+def pdf_contains_images(data):
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        for page in reader.pages:
+            resources = page.get("/Resources")
+            if not resources:
+                continue
+            xobjects = resources.get("/XObject")
+            if not xobjects:
+                continue
+            for reference in xobjects.values():
+                xobject = reference.get_object()
+                if xobject.get("/Subtype") == "/Image":
+                    return True
+    except Exception:
+        app.logger.info("Could not inspect PDF image resources", exc_info=True)
+    return False
+
+
+def extract_pdf_text(data):
+    reader = PdfReader(io.BytesIO(data))
+    pages = []
+    for page_number, page in enumerate(reader.pages, start=1):
+        text = (page.extract_text() or "").strip()
+        if text:
+            pages.append(f"[Page {page_number}]\n{text}")
+    return "\n\n".join(pages).strip()
+
+
+def extract_image_text(data):
+    image = Image.open(io.BytesIO(data))
+    image.load()
+    return pytesseract.image_to_string(image).strip()
+
+
+def extract_upload_text(data, extension):
+    if extension == "pdf":
+        return extract_pdf_text(data)
+    if extension in {"png", "jpg", "jpeg", "webp", "gif"}:
+        return extract_image_text(data)
+    return ""
+
+
+def generate_text(api_key, prompt, attachments=None):
     client = get_client(api_key)
-    if not attachment:
+    if isinstance(attachments, dict):
+        attachments = [attachments]
+    attachments = attachments or []
+    if not attachments:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[prompt],
         )
     else:
-        uploaded_file = None
+        uploaded_files = []
         try:
-            stream = io.BytesIO(attachment["data"])
-            upload_config = types.UploadFileConfig(
-                mime_type=attachment["mime_type"],
-                display_name=attachment.get("filename", "studyscribe-source"),
-            )
-            uploaded_file = wait_for_file(
-                client,
-                client.files.upload(file=stream, config=upload_config),
-            )
+            for attachment in attachments:
+                stream = io.BytesIO(attachment["data"])
+                upload_config = types.UploadFileConfig(
+                    mime_type=attachment["mime_type"],
+                    display_name=attachment.get("filename", "studyscribe-source"),
+                )
+                uploaded_file = client.files.upload(file=stream, config=upload_config)
+                uploaded_files.append(uploaded_file)
+                uploaded_files[-1] = wait_for_file(client, uploaded_file)
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=[prompt, uploaded_file],
+                contents=[prompt, *uploaded_files],
             )
         finally:
-            if uploaded_file and getattr(uploaded_file, "name", None):
+            for uploaded_file in uploaded_files:
                 try:
-                    client.files.delete(name=uploaded_file.name)
+                    if getattr(uploaded_file, "name", None):
+                        client.files.delete(name=uploaded_file.name)
                 except Exception:
                     app.logger.warning("Gemini file cleanup failed", exc_info=True)
     if not response.text:
@@ -153,7 +205,7 @@ def generate():
     body = request.get_json(silent=True) or {}
     action = body.get("action", "summary")
     content = (body.get("content") or "").strip()
-    api_key = body.get("api_key", "")
+    api_key = body.get("apiKey") or body.get("api_key") or ""
 
     if action not in PROMPTS:
         return error("Choose a supported study action.")
@@ -172,43 +224,65 @@ def generate():
 
 @app.post("/studyscribe-api/analyze-file")
 def analyze_file():
-    api_key = request.form.get("api_key", "")
+    api_key = request.form.get("apiKey") or request.form.get("api_key") or ""
     action = request.form.get("action", "summary")
-    upload = request.files.get("file")
+    uploads = request.files.getlist("files") or request.files.getlist("file")
+    source_context = request.form.get("content", "").strip()
 
     if action not in PROMPTS:
         return error("Choose a supported study action.")
-    if not upload or not upload.filename:
+    if not uploads:
         return error("Choose a PDF or image to process.")
-    filename = secure_filename(upload.filename)
-    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if extension not in ALLOWED_EXTENSIONS or extension in {"mp3", "wav", "m4a", "webm", "mp4"}:
-        return error("This upload needs to be a PDF or an image.")
+    if len(uploads) > MAX_UPLOAD_COUNT:
+        return error(f"Choose up to {MAX_UPLOAD_COUNT} files at a time.")
 
-    data = upload.read()
-    if not data:
-        return error("The selected file is empty.")
     try:
-        mime_type = (
-            "application/pdf"
-            if extension == "pdf"
-            else f"image/{'jpeg' if extension in {'jpg', 'jpeg'} else extension}"
-        )
+        extracted_parts = []
+        binary_fallbacks = []
+        filenames = []
+        for upload in uploads:
+            filename = secure_filename(upload.filename or "")
+            extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+            if extension not in {"pdf", "png", "jpg", "jpeg", "webp", "gif"}:
+                return error(f"{filename or 'One upload'} needs to be a PDF or an image.")
+            data = upload.read()
+            if not data:
+                return error(f"{filename or 'One upload'} is empty.")
+            filenames.append(filename)
+            try:
+                extracted_text = extract_upload_text(data, extension)
+            except Exception:
+                app.logger.warning("Local extraction failed for %s; using Gemini Files API fallback", filename, exc_info=True)
+                extracted_text = ""
+            should_use_binary = len(extracted_text) < MIN_EXTRACTED_TEXT
+            if extension == "pdf" and pdf_contains_images(data):
+                should_use_binary = True
+            if extracted_text:
+                extracted_parts.append(f"[Source file: {filename}]\n{extracted_text}")
+            if should_use_binary:
+                mime_type = "application/pdf" if extension == "pdf" else f"image/{'jpeg' if extension in {'jpg', 'jpeg'} else extension}"
+                binary_fallbacks.append(
+                    {"data": data, "mime_type": mime_type, "filename": filename}
+                )
+
         prompt = (
             PROMPTS[action]
             + """
-The attached source may be a scanned or image-heavy PDF. Use Gemini vision OCR page by page.
-Read visible text, diagrams, equations, subscripts, superscripts, symbols, and chemical formulas
-carefully. Preserve the meaning of handwritten or photographed notes, and do not skip pages
-just because they contain little machine-readable text.
+The source text below was extracted locally from one or more uploaded files.
+Preserve technical details, equations, subscripts, superscripts, symbols, and chemical formulas.
+If binary source files are also attached, use them to recover diagrams, handwriting, layout, or
+content that local extraction could not read. Combine all source files into one coherent study context.
 """
         )
+        all_context = "\n\n".join(part for part in [source_context, *extracted_parts] if part).strip()
+        if len(all_context) < MIN_EXTRACTED_TEXT and not binary_fallbacks:
+            return error("Could not extract readable text from these files.")
         result = generate_text(
             api_key,
-            prompt,
-            {"data": data, "mime_type": mime_type, "filename": filename},
+            prompt + "\n\n" + all_context if all_context else prompt,
+            binary_fallbacks,
         )
-        return jsonify({"result": result, "action": action, "filename": filename})
+        return jsonify({"result": result, "action": action, "filenames": filenames})
     except ValueError as exc:
         return error(str(exc))
     except Exception as exc:
@@ -218,7 +292,7 @@ just because they contain little machine-readable text.
 
 @app.post("/studyscribe-api/transcribe")
 def transcribe():
-    api_key = request.form.get("api_key", "")
+    api_key = request.form.get("apiKey") or request.form.get("api_key") or ""
     upload = request.files.get("audio")
     if not upload or not upload.filename:
         return error("No recording was received.")
@@ -227,13 +301,22 @@ def transcribe():
     if not data:
         return error("The recording is empty.")
     try:
-        mime_type = upload.mimetype or "audio/webm"
+        extension = secure_filename(upload.filename).rsplit(".", 1)[-1].lower()
+        if extension not in {"wav", "mp3", "m4a", "webm", "mp4"}:
+            return error("Use a WAV or MP3 recording for transcription.")
+        mime_type = {
+            "wav": "audio/wav",
+            "mp3": "audio/mpeg",
+            "m4a": "audio/mp4",
+            "webm": "audio/webm",
+            "mp4": "audio/mp4",
+        }[extension]
         prompt = """Transcribe this lecture recording accurately.
 Return only the transcript, with paragraph breaks when the speaker changes topics. Preserve technical terms and do not summarize or add commentary."""
         transcript = generate_text(
             api_key,
             prompt,
-            {"data": data, "mime_type": mime_type, "filename": upload.filename},
+            [{"data": data, "mime_type": mime_type, "filename": upload.filename}],
         )
         return jsonify({"transcript": transcript})
     except ValueError as exc:
