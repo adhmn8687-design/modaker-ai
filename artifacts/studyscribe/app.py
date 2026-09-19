@@ -19,6 +19,7 @@ MAX_UPLOAD_COUNT = 10
 MIN_EXTRACTED_TEXT = 24
 MAX_INLINE_IMAGE_SIZE = 4 * 1024 * 1024
 MAX_INLINE_IMAGE_TOTAL = 12 * 1024 * 1024
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash").strip() or "gemini-3.6-flash"
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif", "heic", "heif"}
 ALLOWED_EXTENSIONS = {
     "pdf",
@@ -231,7 +232,7 @@ def generate_text(api_key, prompt, attachments=None, inline_attachments=None):
                 raise RuntimeError("Gemini did not return a usable file URI.")
             parts.append(types.Part.from_uri(file_uri=file_uri, mime_type=file_mime))
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             contents=[types.Content(role="user", parts=parts)],
         )
     finally:

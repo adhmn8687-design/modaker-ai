@@ -26,3 +26,9 @@ Text submissions must be routed before multipart file validation. Small normaliz
 **Why:** Stale browser file selections and manually shaped binary payloads were causing Gemini ClientError responses, while large inline image batches risk request-size failures.
 
 **How to apply:** Treat a valid `text` field as a file-free request, normalize image bytes to canonical MIME types, cap total inline image bytes, and use URI parts for Files API fallbacks.
+
+The Gemini model name must remain configurable through `GEMINI_MODEL`; the default is `gemini-3.6-flash` because `gemini-2.5-flash` returned a 404 for new users.
+
+**Why:** The observed image ClientError occurred at `models.generate_content`, after valid image payload construction; the provider explicitly reported the old model was unavailable, so changing MIME handling alone could not fix it.
+
+**How to apply:** When Gemini returns a model-availability 404, inspect the provider message before changing file payloads, update the configured model, restart Flask, and verify both text and multi-image routes with live HTTP requests.
