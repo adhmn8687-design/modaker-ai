@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="ltr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#f8f8fc" />
-    <title>StudyScribe — turn class time into study time</title>
-    <meta name="description" content="StudyScribe turns lectures, notes, PDFs, and images into summaries, quizzes, assignments, and exam-ready notes." />
+    <title>Modaker AI — المُذاكر الذكي</title>
+    <meta name="description" content="Modaker AI (المُذاكر الذكي) يحوّل المحاضرات والملاحظات وملفات PDF والصور إلى ملخصات واختبارات ومذكرات للمذاكرة." />
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='mark.svg') }}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,7 +21,7 @@
       <aside class="sidebar">
         <a class="brand" href="/">
           <span class="brand-mark"><i class="bi bi-stars"></i></span>
-          <span>Study<span>Scribe</span></span>
+           <span>Modaker AI <small>(المُذاكر الذكي)</small></span>
         </a>
         <div class="sidebar-label">Your workspace</div>
         <nav class="side-nav">
@@ -51,7 +51,7 @@
             </div>
             <button class="ad-button" id="adButton" type="button"><i class="bi bi-play-fill"></i> Watch Ad <span>(+3 Credits)</span></button>
             <span class="byok-badge d-none" id="byokBadge"><i class="bi bi-infinity"></i> BYOK unlimited</span>
-            <button class="icon-button" id="helpButton" type="button" aria-label="Open StudyScribe settings"><i class="bi bi-gear"></i></button>
+             <button class="icon-button" id="helpButton" type="button" aria-label="فتح إعدادات المُذاكر الذكي"><i class="bi bi-gear"></i></button>
             <div class="avatar">AS</div>
           </div>
         </header>
@@ -61,14 +61,14 @@
             <div>
               <div class="eyebrow"><span class="eyebrow-line"></span> AI study companion</div>
               <h1>Turn class time<br /><em>into study time.</em></h1>
-              <p class="hero-copy">Bring your lecture, notes, or course material. StudyScribe shapes it into something you can actually use.</p>
+              <p class="hero-copy">أحضر محاضرتك أو ملاحظاتك أو محتوى المقرر، وسيحوّله المُذاكر الذكي إلى مادة عملية تساعدك على الفهم والمراجعة.</p>
             </div>
             <div class="session-chip"><span class="status-pulse"></span><span id="sessionState">Ready for a new session</span></div>
           </section>
 
           <section class="key-card" aria-label="Gemini API key">
             <div class="key-symbol"><i class="bi bi-key"></i></div>
-             <div class="key-copy"><strong>Optional: use your own Gemini key</strong><span>StudyScribe includes a secure server key. Add yours for BYOK Unlimited access; it stays in this browser session.</span></div>
+              <div class="key-copy"><strong>اختياري: استخدم مفتاح Gemini الخاص بك</strong><span>يتضمن Modaker AI مفتاحًا آمنًا على الخادم. أضف مفتاحك للحصول على استخدام غير محدود، وسيبقى في جلسة المتصفح.</span></div>
             <div class="key-input-wrap">
               <i class="bi bi-lock"></i>
               <input id="apiKey" type="password" placeholder="Paste your Gemini API key" autocomplete="off" />
@@ -97,7 +97,7 @@
                     <span class="upload-icon"><i class="bi bi-cloud-arrow-up"></i></span>
                     <strong>Drop PDFs or screenshots here</strong>
                     <span>or <u>browse multiple files</u> · up to 25 MB total</span>
-                    <input id="fileInput" type="file" multiple accept="image/*,.pdf" hidden />
+                     <input id="fileInput" type="file" multiple accept="image/*,.pdf,.heic,.heif" hidden />
                   </label>
                   <div id="filePreview" class="file-preview d-none"></div>
                 </div>
@@ -149,12 +149,12 @@
           </section>
           <section class="settings-section" id="settings">
             <div class="section-heading">
-              <div><span class="section-kicker">Workspace settings</span><h2>StudyScribe settings</h2></div>
+              <div><span class="section-kicker">إعدادات مساحة العمل</span><h2>إعدادات Modaker AI</h2></div>
             </div>
             <div class="settings-card">
               <div class="settings-item">
                 <span class="settings-icon icon-violet"><i class="bi bi-shield-check"></i></span>
-                <div><strong>Secure Gemini access</strong><p>Default sessions use the protected StudyScribe server key. Your personal key is optional and remains in this browser session.</p></div>
+                <div><strong>وصول آمن إلى Gemini</strong><p>تستخدم الجلسات الافتراضية مفتاح Modaker AI المحمي على الخادم. مفتاحك الشخصي اختياري ويبقى في جلسة المتصفح.</p></div>
               </div>
               <div class="settings-item">
                 <span class="settings-icon icon-orange"><i class="bi bi-lightning-charge"></i></span>
@@ -167,7 +167,7 @@
             </div>
           </section>
         </div>
-        <footer class="footer"><span>StudyScribe</span><span>Created &amp; Developed by Adham</span><span>Built for better learning · Powered by Gemini</span></footer>
+        <footer class="footer"><span>Modaker AI · المُذاكر الذكي</span><span>Created &amp; Developed by Adham</span><span>للمذاكرة الأفضل · Powered by Gemini</span></footer>
       </main>
     </div>
     <div class="ad-modal-backdrop d-none" id="adModal" role="dialog" aria-modal="true" aria-labelledby="adTitle">
@@ -188,10 +188,10 @@
         <span class="ad-modal-icon mic-help-icon"><i class="bi bi-mic-mute-fill"></i></span>
         <span class="section-kicker">Microphone permission</span>
         <h2 id="micHelpTitle">Allow microphone access</h2>
-        <p id="micHelpMessage">StudyScribe needs microphone access to record a lecture.</p>
+        <p id="micHelpMessage">يحتاج المُذاكر الذكي إلى إذن الميكروفون لتسجيل المحاضرة.</p>
         <div class="permission-steps">
           <strong>Android / Chrome</strong><span>Tap the lock icon beside the address, open Permissions, set Microphone to Allow, then reload.</span>
-          <strong>iPhone / iPad</strong><span>Open Settings → Safari → Microphone, choose Allow, then return to StudyScribe and reload.</span>
+          <strong>iPhone / iPad</strong><span>Open Settings → Safari → Microphone, choose Allow, then return to Modaker AI and reload.</span>
         </div>
         <button class="button button-primary ad-start" type="button" id="micHelpDone">Got it</button>
       </div>

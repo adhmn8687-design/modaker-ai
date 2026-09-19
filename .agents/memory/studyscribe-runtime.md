@@ -20,3 +20,9 @@ PDF and image inputs are extracted locally first with pypdf and Tesseract OCR. S
 **Why:** Inline PDF parts were the source of client errors and could under-read documents whose content was primarily scanned imagery; local extraction makes text-first behavior deterministic while the Files API preserves diagrams and handwriting.
 
 **How to apply:** Preserve the extract-first → combine all file context → Files API fallback lifecycle, and keep the upload → wait for ACTIVE → generate → delete lifecycle for binary fallbacks.
+
+Text submissions must be routed before multipart file validation. Small normalized images may be sent as SDK-generated `inlineData` parts, while PDFs and oversized binaries should remain Files API uploads.
+
+**Why:** Stale browser file selections and manually shaped binary payloads were causing Gemini ClientError responses, while large inline image batches risk request-size failures.
+
+**How to apply:** Treat a valid `text` field as a file-free request, normalize image bytes to canonical MIME types, cap total inline image bytes, and use URI parts for Files API fallbacks.

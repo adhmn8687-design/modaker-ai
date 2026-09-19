@@ -1,5 +1,6 @@
 const state = {
   action: "summary",
+  sourceMode: "write",
   selectedFiles: [],
   recording: null,
   recorder: null,
@@ -13,7 +14,9 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 function getApiKey() {
-  return sessionStorage.getItem("studyscribe_gemini_key") || $("#apiKey").value.trim();
+  return sessionStorage.getItem("modaker_gemini_key")
+    || sessionStorage.getItem("studyscribe_gemini_key")
+    || $("#apiKey").value.trim();
 }
 
 function hasByok(apiKey = getApiKey()) {
@@ -27,7 +30,7 @@ function todayKey() {
 
 function readCredits() {
   try {
-    const saved = JSON.parse(localStorage.getItem("studyscribe_credits") || "null");
+    const saved = JSON.parse(localStorage.getItem("modaker_credits") || localStorage.getItem("studyscribe_credits") || "null");
     if (saved?.date === todayKey() && Number.isFinite(saved.balance)) return Math.max(0, saved.balance);
   } catch (error) {
     // Fall back to the daily allowance if browser storage is unavailable.
@@ -37,7 +40,7 @@ function readCredits() {
 }
 
 function writeCredits(balance) {
-  try { localStorage.setItem("studyscribe_credits", JSON.stringify({ date: todayKey(), balance })); } catch (error) {}
+  try { localStorage.setItem("modaker_credits", JSON.stringify({ date: todayKey(), balance })); } catch (error) {}
 }
 
 function refreshCredits() {
@@ -127,7 +130,7 @@ function setLoading(loading, label = "Generate study material") {
   button.querySelector("i").className = loading ? "bi bi-arrow-repeat spin" : "bi bi-arrow-right";
 }
 
-function renderResult(result, action, sourceLabel = "StudyScribe") {
+function renderResult(result, action, sourceLabel = "Modaker AI") {
   state.lastOutput = result;
   const labels = { summary: "Quick summary", notes: "Study notes", quiz: "Practice quiz", assignment: "Assignment" };
   $("#outputCard").innerHTML = `
@@ -153,25 +156,26 @@ async function generate() {
   clearAlert();
   const apiKey = getApiKey();
   const sourceText = $("#sourceText").value.trim();
-  if (!sourceText && !state.selectedFiles.length) return showAlert("Paste some material or upload a PDF/image first.");
+  const textIsValid = state.sourceMode === "write" && sourceText.length >= 20;
+  if (!textIsValid && !state.selectedFiles.length) return showAlert("اكتب مادة دراسية أو ارفع ملف PDF/صورة أولًا.");
   const charged = spendCredit();
   if (charged === null) return showAlert("You’re out of free credits for today. Watch the rewarded ad above to earn 3 more.");
   setLoading(true);
   try {
     let response;
-    if (state.selectedFiles.length) {
-      const form = new FormData();
-      form.append("apiKey", apiKey);
-      form.append("action", state.action);
-      form.append("content", sourceText);
-      state.selectedFiles.forEach((file) => form.append("files", file, file.name));
-      response = await fetch("/studyscribe-api/analyze-file", { method: "POST", body: form });
-    } else {
+    if (textIsValid) {
+      // Text mode never sends multipart data or stale file selections.
       response = await fetch("/studyscribe-api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey, action: state.action, content: sourceText }),
+        body: JSON.stringify({ apiKey, action: state.action, text: sourceText }),
       });
+    } else if (state.selectedFiles.length) {
+      const form = new FormData();
+      form.append("apiKey", apiKey);
+      form.append("action", state.action);
+      state.selectedFiles.forEach((file) => form.append("files", file, file.name));
+      response = await fetch("/studyscribe-api/analyze-file", { method: "POST", body: form });
     }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Something went wrong.");
@@ -196,19 +200,19 @@ function updateTimer() {
 async function startRecording() {
   clearAlert();
   if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
-    const message = "Microphone access requires a secure connection. Open StudyScribe over HTTPS, then try again.";
+    const message = "يحتاج Modaker AI إلى اتصال آمن للوصول إلى الميكروفون. افتح التطبيق عبر HTTPS ثم حاول مرة أخرى.";
     showAlert(message);
     showMicPermissionHelp(message);
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
-    const message = "This browser or Android WebView does not expose microphone access.";
+    const message = "هذا المتصفح أو Android WebView لا يتيح الوصول إلى الميكروفون.";
     showAlert(message);
     showMicPermissionHelp(message);
     return;
   }
   if (!window.MediaRecorder) {
-    const message = "Audio recording is not supported in this browser. Try an updated Chrome, Safari, or Firefox.";
+    const message = "تسجيل الصوت غير مدعوم في هذا المتصفح. جرّب Chrome أو Safari أو Firefox محدثًا.";
     showAlert(message);
     showMicPermissionHelp(message);
     return;
@@ -224,13 +228,13 @@ async function startRecording() {
     state.recorder.onerror = () => {
       window.clearInterval(state.timer);
       stream.getTracks().forEach((track) => track.stop());
-      showMicPermissionHelp("The browser stopped the recording unexpectedly. Check microphone permissions and try again.");
-      showAlert("The browser stopped the recording unexpectedly. Check microphone permissions and try again.");
+      showMicPermissionHelp("توقف المتصفح عن التسجيل فجأة. تحقّق من إذن الميكروفون وحاول مرة أخرى.");
+      showAlert("توقف المتصفح عن التسجيل فجأة. تحقّق من إذن الميكروفون وحاول مرة أخرى.");
     };
     state.recorder.onstop = () => {
       stream.getTracks().forEach((track) => track.stop());
       state.recording = new Blob(state.chunks, { type: state.recorder.mimeType || "audio/webm" });
-      $("#recordStatus").textContent = "Recording ready. Send it to Gemini for a clean transcript.";
+      $("#recordStatus").textContent = "التسجيل جاهز. أرسله إلى Gemini للحصول على تفريغ واضح.";
       $("#recordButton").classList.add("d-none");
       $("#transcribeButton").classList.remove("d-none");
     };
@@ -242,18 +246,18 @@ async function startRecording() {
     $("#recordButton").classList.add("active");
     $("#recordButton").querySelector("span").textContent = "Stop recording";
     $("#recordButton").querySelector("i").className = "bi bi-stop-fill";
-    $("#recordStatus").textContent = "Listening… your lecture is being captured in this browser.";
+    $("#recordStatus").textContent = "جارٍ الاستماع… يتم تسجيل المحاضرة في هذا المتصفح.";
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
     const messageByName = {
-      NotAllowedError: "Microphone permission was denied or blocked for this site.",
-      PermissionDeniedError: "Microphone permission was denied or blocked for this site.",
-      NotFoundError: "No microphone was found. Connect a microphone and try again.",
-      NotReadableError: "The microphone is busy or unavailable. Close other recording apps and try again.",
-      SecurityError: "Your browser blocked microphone access because this page is not secure.",
+      NotAllowedError: "تم رفض إذن الميكروفون أو حظره لهذا الموقع.",
+      PermissionDeniedError: "تم رفض إذن الميكروفون أو حظره لهذا الموقع.",
+      NotFoundError: "لم يتم العثور على ميكروفون. وصّل ميكروفونًا ثم حاول مرة أخرى.",
+      NotReadableError: "الميكروفون مشغول أو غير متاح. أغلق تطبيقات التسجيل الأخرى ثم حاول.",
+      SecurityError: "حظر المتصفح الوصول إلى الميكروفون لأن الصفحة غير آمنة.",
     };
-    const message = messageByName[error.name] || "The microphone could not be opened on this device.";
-    showAlert(`${message} Use the permission steps below, then reload StudyScribe.`);
+    const message = messageByName[error.name] || "تعذر فتح الميكروفون على هذا الجهاز.";
+    showAlert(`${message} اتبع خطوات الإذن بالأسفل ثم أعد تحميل Modaker AI.`);
     showMicPermissionHelp(message);
   }
 }
@@ -315,7 +319,7 @@ async function transcribe() {
   const button = $("#transcribeButton");
   const charged = spendCredit();
   if (charged === null) {
-    showAlert("You’re out of free credits for today. Watch the rewarded ad above to earn 3 more.");
+    showAlert("انتهت أرصدتك المجانية اليوم. شاهد الإعلان للحصول على 3 أرصدة إضافية.");
     return;
   }
   button.disabled = true;
@@ -390,18 +394,18 @@ function startRewardedAd() {
 }
 
 function setup() {
-  const storedKey = sessionStorage.getItem("studyscribe_gemini_key");
+  const storedKey = sessionStorage.getItem("modaker_gemini_key") || sessionStorage.getItem("studyscribe_gemini_key");
   if (storedKey) { $("#apiKey").value = storedKey; $("#sessionState").textContent = "Gemini key connected"; }
-  if (!storedKey) $("#sessionState").textContent = "Using StudyScribe secure key";
+  if (!storedKey) $("#sessionState").textContent = "Using Modaker AI secure key";
   refreshCredits();
   $("#apiKey").addEventListener("input", () => {
     refreshCredits();
-    $("#sessionState").textContent = hasByok() ? "Personal Gemini key ready" : "Using StudyScribe secure key";
+    $("#sessionState").textContent = hasByok() ? "Personal Gemini key ready" : "Using Modaker AI secure key";
   });
   $("#saveKey").addEventListener("click", () => {
     const key = $("#apiKey").value.trim();
     if (!key) return showAlert("Paste your Gemini API key first.");
-    sessionStorage.setItem("studyscribe_gemini_key", key);
+    sessionStorage.setItem("modaker_gemini_key", key);
     $("#sessionState").textContent = "Gemini key connected";
     refreshCredits();
     showToast("Key saved for this browser session.");
@@ -416,6 +420,7 @@ function setup() {
     $("#wordCount").textContent = `${count} word${count === 1 ? "" : "s"}`;
   });
   $$(".source-tab").forEach((tab) => tab.addEventListener("click", () => {
+    state.sourceMode = tab.dataset.tab;
     $$(".source-tab").forEach((item) => item.classList.remove("active"));
     tab.classList.add("active");
     $("#writePanel").classList.toggle("active", tab.dataset.tab === "write");
@@ -463,7 +468,7 @@ function setup() {
   $("#copyOutput").addEventListener("click", async () => { await navigator.clipboard.writeText(state.lastOutput); showToast("Copied to clipboard."); });
   $("#downloadOutput").addEventListener("click", () => {
     const blob = new Blob([state.lastOutput], { type: "text/markdown" });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "studyscribe-material.md"; link.click(); URL.revokeObjectURL(link.href);
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "modaker-material.md"; link.click(); URL.revokeObjectURL(link.href);
   });
   $("#clearRecent").addEventListener("click", () => { $("#recentList").innerHTML = ""; showToast("Recent outputs cleared."); });
   $("#mobileMenu").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
