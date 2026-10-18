@@ -41,6 +41,7 @@
           <a class="side-link active" href="#workspace"><i class="bi bi-grid-1x2"></i><span>Workspace</span></a>
           <a class="side-link" href="#record"><i class="bi bi-mic"></i><span>Record lecture</span><span class="nav-dot"></span></a>
           <a class="side-link" href="#recent"><i class="bi bi-clock-history"></i><span>Recent outputs</span></a>
+          <a class="side-link" href="#library"><i class="bi bi-archive"></i><span>Library / Saved References</span></a>
           <a class="side-link" href="#settings"><i class="bi bi-sliders"></i><span>Settings</span></a>
         </nav>
         <div class="sidebar-bottom">
@@ -155,10 +156,17 @@
           </section>
 
           <section class="output-section" id="outputSection">
-            <div class="section-heading"><div><span class="section-kicker">03 / Your result</span><h2>Study material</h2></div><div class="output-actions d-none" id="outputActions"><button id="copyOutput"><i class="bi bi-copy"></i> Copy</button><button id="downloadOutput"><i class="bi bi-download"></i> Download</button></div></div>
+            <div class="section-heading"><div><span class="section-kicker">03 / Your result</span><h2>Study material</h2></div><div class="output-actions d-none" id="outputActions"><button id="saveToLibrary" class="save-library-button"><i class="bi bi-bookmark-plus"></i> Save to Library</button><button id="copyOutput"><i class="bi bi-copy"></i> Copy</button><button id="downloadOutput"><i class="bi bi-download"></i> Download</button></div></div>
             <div class="output-card" id="outputCard">
               <div class="empty-output"><span class="empty-icon"><i class="bi bi-stars"></i></span><h3>Your study guide will appear here</h3><p>Choose a format above and generate your first set of material.</p></div>
             </div>
+          </section>
+          <section class="library-section" id="library">
+            <div class="section-heading">
+              <div><span class="section-kicker">Keep what matters</span><h2>Library / Saved References</h2></div>
+              <span class="library-count" id="libraryCount">0 saved items</span>
+            </div>
+            <div class="library-list" id="libraryList" aria-live="polite"></div>
           </section>
           <section class="settings-section" id="settings">
             <div class="section-heading">

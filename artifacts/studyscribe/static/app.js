@@ -9,6 +9,11 @@ const state = {
   timer: null,
   seconds: 0,
   lastOutput: "",
+  currentQuiz: null,
+  currentAction: "summary",
+  currentTitle: "",
+  currentSaved: false,
+  currentSavedId: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -131,22 +136,182 @@ function setLoading(loading, label = "Generate study material") {
   button.querySelector("i").className = loading ? "bi bi-arrow-repeat spin" : "bi bi-arrow-right";
 }
 
-function renderResult(result, action, sourceLabel = "Modaker AI") {
+function titleForSource(sourceLabel, result) {
+  if (sourceLabel && sourceLabel !== "Pasted material") return sourceLabel.slice(0, 90);
+  const firstLine = ($("#sourceText")?.value || result || "").trim().split(/\r?\n/).find(Boolean) || "Study reference";
+  return firstLine.replace(/^#+\s*/, "").slice(0, 72) || "Study reference";
+}
+
+function renderQuiz(quiz) {
+  if (!quiz || !Array.isArray(quiz.questions) || !quiz.questions.length) {
+    return `<div class="quiz-panel"><p class="quiz-unavailable">Interactive questions are unavailable for this saved result. The original quiz text is below.</p></div>`;
+  }
+  return `<div class="quiz-panel">${quiz.questions.map((question, questionIndex) => `
+    <article class="quiz-question" data-question="${questionIndex}">
+      <h3>${questionIndex + 1}. ${escapeHtml(String(question.question || ""))}</h3>
+      <div class="quiz-options">${(Array.isArray(question.options) ? question.options : []).map((option, optionIndex) => `
+        <button class="quiz-option" type="button" data-question="${questionIndex}" data-option="${optionIndex}">
+          <span class="option-letter">${String.fromCharCode(65 + optionIndex)}</span><span>${escapeHtml(String(option))}</span>
+        </button>`).join("")}</div>
+      <div class="quiz-feedback d-none" aria-live="polite"></div>
+    </article>`).join("")}</div>`;
+}
+
+function renderResult(result, action, sourceLabel = "Modaker AI", quiz = null, options = {}) {
   state.lastOutput = result;
+  state.currentQuiz = action === "quiz" ? quiz : null;
+  state.currentAction = action;
+  state.currentTitle = titleForSource(sourceLabel, result);
+  state.currentSaved = Boolean(options.saved);
+  state.currentSavedId = options.savedId || null;
   const labels = { summary: "Quick summary", notes: "Study notes", quiz: "Practice quiz", assignment: "Assignment" };
   const outputCard = $("#outputCard");
   window.MathJax?.typesetClear?.([outputCard]);
+  const quizMarkup = action === "quiz" ? renderQuiz(quiz) : "";
+  const sourceMarkup = action === "quiz"
+    ? `<details class="quiz-source"><summary>Quiz source text</summary><div class="result-body">${renderMarkdown(result)}</div></details>`
+    : `<div class="result-body">${renderMarkdown(result)}</div>`;
   outputCard.innerHTML = `
-    <div class="result-meta"><i class="bi bi-stars"></i><span>${labels[action] || "Study material"} · ${sourceLabel}</span><span class="ms-auto">${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
-    <div class="result-body">${renderMarkdown(result)}</div>
+    <div class="result-meta"><i class="bi bi-stars"></i><span>${labels[action] || "Study material"} · ${escapeHtml(String(sourceLabel))}</span><span class="ms-auto">${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+    ${quizMarkup}${sourceMarkup}
   `;
-  const resultBody = outputCard.querySelector(".result-body");
-  window.MathJax?.typesetPromise?.([resultBody]).catch((error) => {
+  window.MathJax?.typesetPromise?.([outputCard]).catch((error) => {
     console.warn("Math rendering failed; keeping the original equation text.", error);
   });
   $("#outputActions").classList.remove("d-none");
+  const saveButton = $("#saveToLibrary");
+  saveButton.disabled = state.currentSaved;
+  saveButton.innerHTML = state.currentSaved
+    ? '<i class="bi bi-bookmark-check"></i> Saved to Library'
+    : '<i class="bi bi-bookmark-plus"></i> Save to Library';
   $("#outputSection").scrollIntoView({ behavior: "smooth", block: "start" });
-  addRecentItem(sourceLabel, labels[action] || "Study material", action);
+  if (options.recordRecent !== false) addRecentItem(sourceLabel, labels[action] || "Study material", action);
+}
+
+function readLibrary() {
+  try {
+    const items = JSON.parse(localStorage.getItem("modaker_library_v1") || "[]");
+    return Array.isArray(items) ? items.filter((item) => item && item.id && typeof item.result === "string") : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeLibrary(items) {
+  try {
+    localStorage.setItem("modaker_library_v1", JSON.stringify(items));
+    return true;
+  } catch (error) {
+    showToast("Could not save this item. Check available browser storage.");
+    return false;
+  }
+}
+
+function formatSavedDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function renderLibrary() {
+  const items = readLibrary().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  $("#libraryCount").textContent = `${items.length} saved ${items.length === 1 ? "item" : "items"}`;
+  const list = $("#libraryList");
+  if (!items.length) {
+    list.innerHTML = `<div class="library-empty"><span class="empty-icon"><i class="bi bi-archive"></i></span><div><h3>Your saved references will live here</h3><p>Save a summary, set of notes, quiz, or assignment after it is generated. Your library stays in this browser.</p></div></div>`;
+    return;
+  }
+  const icons = { summary: ["file-earmark-text", "purple", "Quick summary"], notes: ["journal-text", "green", "Study notes"], quiz: ["patch-question", "orange", "Practice quiz"], assignment: ["pencil", "purple", "Assignment"] };
+  list.innerHTML = items.map((item) => {
+    const [icon, color, label] = icons[item.action] || icons.summary;
+    return `<article class="library-item" data-saved-id="${escapeHtml(String(item.id))}">
+      <span class="recent-file ${color}"><i class="bi bi-${icon}"></i></span>
+      <div class="library-item-copy"><strong>${escapeHtml(item.title || "Study reference")}</strong><small>${label} · Saved ${formatSavedDate(item.createdAt)}</small></div>
+      <div class="library-item-actions">
+        <button type="button" class="open-saved" data-id="${escapeHtml(String(item.id))}"><i class="bi bi-arrow-up-right"></i> Open</button>
+        <button type="button" class="delete-saved" data-id="${escapeHtml(String(item.id))}" aria-label="Delete ${escapeHtml(item.title || "saved item")}"><i class="bi bi-trash3"></i> Delete</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function saveCurrentToLibrary() {
+  if (!state.lastOutput) return;
+  const items = readLibrary();
+  const id = window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const item = {
+    id,
+    action: state.currentAction,
+    title: state.currentTitle || "Study reference",
+    result: state.lastOutput,
+    quiz: state.currentAction === "quiz" ? state.currentQuiz : null,
+    createdAt: new Date().toISOString(),
+  };
+  if (!writeLibrary([item, ...items])) return;
+  state.currentSaved = true;
+  state.currentSavedId = id;
+  $("#saveToLibrary").disabled = true;
+  $("#saveToLibrary").innerHTML = '<i class="bi bi-bookmark-check"></i> Saved to Library';
+  renderLibrary();
+  showToast("Saved to your library.");
+}
+
+function openSavedItem(id) {
+  const item = readLibrary().find((entry) => String(entry.id) === String(id));
+  if (!item) return renderLibrary();
+  const action = item.action || "summary";
+  renderResult(item.result, action, item.title || "Saved reference", item.quiz || null, { saved: true, savedId: item.id, recordRecent: false });
+}
+
+function deleteSavedItem(id) {
+  const items = readLibrary();
+  const remaining = items.filter((item) => String(item.id) !== String(id));
+  if (remaining.length === items.length) return;
+  if (!writeLibrary(remaining)) return;
+  if (String(state.currentSavedId) === String(id)) {
+    state.currentSaved = false;
+    state.currentSavedId = null;
+    $("#saveToLibrary").disabled = false;
+    $("#saveToLibrary").innerHTML = '<i class="bi bi-bookmark-plus"></i> Save to Library';
+  }
+  renderLibrary();
+  showToast("Saved reference deleted.");
+}
+
+function selectQuizOption(questionIndex, selectedIndex) {
+  const quiz = state.currentQuiz;
+  const question = quiz?.questions?.[questionIndex];
+  const article = $("#outputCard").querySelector(`.quiz-question[data-question="${questionIndex}"]`);
+  if (!question || !article || article.dataset.locked === "true") return;
+  const correctIndex = Number(question.correctIndex);
+  const correct = selectedIndex === correctIndex;
+  article.dataset.locked = "true";
+  article.querySelectorAll(".quiz-option").forEach((button) => {
+    const optionIndex = Number(button.dataset.option);
+    button.disabled = true;
+    if (optionIndex === correctIndex) button.classList.add("correct");
+    if (optionIndex === selectedIndex && !correct) button.classList.add("incorrect");
+  });
+  const feedback = article.querySelector(".quiz-feedback");
+  feedback.classList.remove("d-none");
+  if (!correct) feedback.classList.add("incorrect-feedback");
+  feedback.innerHTML = `<strong>${correct ? "Correct" : "Not quite"}</strong><p>${escapeHtml(String(question.explanation || "Review the source text and try again."))}</p><button type="button" class="quiz-retry" data-question="${questionIndex}">Retry this question</button>`;
+  window.MathJax?.typesetPromise?.([feedback]).catch((error) => {
+    console.warn("Math rendering failed in quiz feedback.", error);
+  });
+}
+
+function resetQuizQuestion(questionIndex) {
+  const article = $("#outputCard").querySelector(`.quiz-question[data-question="${questionIndex}"]`);
+  if (!article) return;
+  article.dataset.locked = "false";
+  article.querySelectorAll(".quiz-option").forEach((button) => {
+    button.disabled = false;
+    button.classList.remove("correct", "incorrect");
+  });
+  const feedback = article.querySelector(".quiz-feedback");
+  feedback.classList.add("d-none");
+  feedback.classList.remove("incorrect-feedback");
+  feedback.innerHTML = "";
 }
 
 function addRecentItem(title, subtitle, action) {
@@ -187,7 +352,7 @@ async function generate() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Something went wrong.");
     const sourceLabel = data.filenames?.length ? data.filenames.join(", ") : "Pasted material";
-    renderResult(data.result, state.action, sourceLabel);
+    renderResult(data.result, state.action, sourceLabel, data.quiz || null);
     $("#sessionState").textContent = "Study material ready";
     showToast("Your study material is ready.");
   } catch (error) {
@@ -452,6 +617,7 @@ function setup() {
   if (storedKey) { $("#apiKey").value = storedKey; $("#sessionState").textContent = "Gemini key connected"; }
   if (!storedKey) $("#sessionState").textContent = "Using Modaker AI secure key";
   refreshCredits();
+  renderLibrary();
   $("#apiKey").addEventListener("input", () => {
     refreshCredits();
     $("#sessionState").textContent = hasByok() ? "Personal Gemini key ready" : "Using Modaker AI secure key";
@@ -488,6 +654,19 @@ function setup() {
     });
   }));
   $("#generateButton").addEventListener("click", generate);
+  $("#saveToLibrary").addEventListener("click", saveCurrentToLibrary);
+  $("#outputCard").addEventListener("click", (event) => {
+    const option = event.target.closest(".quiz-option");
+    const retry = event.target.closest(".quiz-retry");
+    if (option) selectQuizOption(Number(option.dataset.question), Number(option.dataset.option));
+    if (retry) resetQuizQuestion(Number(retry.dataset.question));
+  });
+  $("#libraryList").addEventListener("click", (event) => {
+    const openButton = event.target.closest(".open-saved");
+    const deleteButton = event.target.closest(".delete-saved");
+    if (openButton) openSavedItem(openButton.dataset.id);
+    if (deleteButton) deleteSavedItem(deleteButton.dataset.id);
+  });
   $("#adButton").addEventListener("click", openAdModal);
   $("#adClose").addEventListener("click", closeAdModal);
   $("#adStart").addEventListener("click", startRewardedAd);
