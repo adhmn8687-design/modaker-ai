@@ -15,17 +15,17 @@ The free allowance is intentionally browser-scoped: five credits are stored with
 
 **How to apply:** If credits need anti-abuse guarantees or cross-device persistence later, add authenticated server-side accounting instead of expanding the localStorage model.
 
-PDF and image inputs are extracted locally first with pypdf and Tesseract OCR. Sparse or image-heavy inputs then use the Gemini Files API with processing-state polling and cleanup rather than being passed as inline byte parts. The browser converts recordings to mono WAV before the audio route.
+PDF and image inputs are extracted locally first with pypdf and Tesseract OCR. Always send original raster images alongside OCR text because OCR can flatten equation subscripts, arrows, diagrams, and handwriting; small images use inline parts and larger binaries use the Files API. Browser recordings are converted to mono WAV when possible, with native-format fallback when decoding fails.
 
-**Why:** Inline PDF parts were the source of client errors and could under-read documents whose content was primarily scanned imagery; local extraction makes text-first behavior deterministic while the Files API preserves diagrams and handwriting.
+**Why:** OCR can return readable prose while silently corrupting the scientific symbols users need to study, so extracted-text length is not a reliable signal that the original image is unnecessary. Browser audio decoders also vary by format.
 
-**How to apply:** Preserve the extract-first → combine all file context → Files API fallback lifecycle, and keep the upload → wait for ACTIVE → generate → delete lifecycle for binary fallbacks.
+**How to apply:** Preserve locally extracted text as context, always retain raster sources for Gemini vision, cap aggregate inline image size, and keep the upload → wait for ACTIVE → generate → delete lifecycle for Files API fallbacks. Accept WAV and common browser-native audio types.
 
-Text submissions must be routed before multipart file validation. Small normalized images may be sent as SDK-generated `inlineData` parts, while PDFs and oversized binaries should remain Files API uploads.
+Text submissions must be routed before multipart file validation. Normalize and cap inline image parts, keep PDFs and oversized binaries on the Files API, and render generated LaTeX/chemical notation in the browser with MathJax plus mhchem.
 
-**Why:** Stale browser file selections and manually shaped binary payloads were causing Gemini ClientError responses, while large inline image batches risk request-size failures.
+**Why:** Stale browser file selections and manually shaped binary payloads caused Gemini ClientError responses; unrendered LaTeX appeared as garbled raw text even when the model returned correct formula syntax.
 
-**How to apply:** Treat a valid `text` field as a file-free request, normalize image bytes to canonical MIME types, cap total inline image bytes, and use URI parts for Files API fallbacks.
+**How to apply:** Treat a valid `text` field as a file-free request; preserve original image bytes next to OCR; render inline `$...$`, display `$$...$$`, and `\ce{...}` math after result insertion while keeping copied/downloaded Markdown unchanged.
 
 The Gemini model name must remain configurable through `GEMINI_MODEL`; the default is `gemini-3.6-flash` because `gemini-2.5-flash` returned a 404 for new users.
 

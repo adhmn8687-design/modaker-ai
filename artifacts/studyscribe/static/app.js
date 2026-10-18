@@ -5,6 +5,7 @@ const state = {
   recording: null,
   recorder: null,
   chunks: [],
+  recordingFailed: false,
   timer: null,
   seconds: 0,
   lastOutput: "",
@@ -133,10 +134,16 @@ function setLoading(loading, label = "Generate study material") {
 function renderResult(result, action, sourceLabel = "Modaker AI") {
   state.lastOutput = result;
   const labels = { summary: "Quick summary", notes: "Study notes", quiz: "Practice quiz", assignment: "Assignment" };
-  $("#outputCard").innerHTML = `
+  const outputCard = $("#outputCard");
+  window.MathJax?.typesetClear?.([outputCard]);
+  outputCard.innerHTML = `
     <div class="result-meta"><i class="bi bi-stars"></i><span>${labels[action] || "Study material"} · ${sourceLabel}</span><span class="ms-auto">${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
     <div class="result-body">${renderMarkdown(result)}</div>
   `;
+  const resultBody = outputCard.querySelector(".result-body");
+  window.MathJax?.typesetPromise?.([resultBody]).catch((error) => {
+    console.warn("Math rendering failed; keeping the original equation text.", error);
+  });
   $("#outputActions").classList.remove("d-none");
   $("#outputSection").scrollIntoView({ behavior: "smooth", block: "start" });
   addRecentItem(sourceLabel, labels[action] || "Study material", action);
@@ -221,19 +228,36 @@ async function startRecording() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     state.chunks = [];
-    const supportedMimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+    state.recording = null;
+    $("#transcribeButton").classList.add("d-none");
+    const supportedMimeTypes = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus", "audio/webm", "audio/ogg"];
     const mimeType = supportedMimeTypes.find((type) => typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(type));
     state.recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    state.recordingFailed = false;
     state.recorder.ondataavailable = (event) => event.data.size && state.chunks.push(event.data);
     state.recorder.onerror = () => {
       window.clearInterval(state.timer);
       stream.getTracks().forEach((track) => track.stop());
+      state.recordingFailed = true;
+      state.recording = null;
+      $(".record-card").classList.remove("recording");
+      $("#recordButton").classList.remove("active");
+      $("#recordButton").querySelector("span").textContent = "Record again";
+      $("#recordButton").querySelector("i").className = "bi bi-mic-fill";
+      $("#recordStatus").textContent = "تعذّر حفظ التسجيل. تحقّق من الميكروفون وحاول مرة أخرى.";
       showMicPermissionHelp("توقف المتصفح عن التسجيل فجأة. تحقّق من إذن الميكروفون وحاول مرة أخرى.");
       showAlert("توقف المتصفح عن التسجيل فجأة. تحقّق من إذن الميكروفون وحاول مرة أخرى.");
     };
     state.recorder.onstop = () => {
       stream.getTracks().forEach((track) => track.stop());
+      if (state.recordingFailed) return;
       state.recording = new Blob(state.chunks, { type: state.recorder.mimeType || "audio/webm" });
+      if (!state.recording.size) {
+        $("#recordStatus").textContent = "لم يُلتقط أي صوت. تحقّق من إذن الميكروفون وحاول مرة أخرى.";
+        $("#recordButton").querySelector("span").textContent = "Record again";
+        showAlert("التسجيل فارغ. تأكد من أن الميكروفون يعمل ثم حاول مرة أخرى.");
+        return;
+      }
       $("#recordStatus").textContent = "التسجيل جاهز. أرسله إلى Gemini للحصول على تفريغ واضح.";
       $("#recordButton").classList.add("d-none");
       $("#transcribeButton").classList.remove("d-none");
@@ -314,6 +338,20 @@ async function convertRecordingToWav(blob) {
   }
 }
 
+function getRecordingFileExtension(blob) {
+  const mimeType = (blob.type || "").split(";")[0].toLowerCase();
+  return ({
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/mp4": "m4a",
+    "audio/aac": "m4a",
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+  })[mimeType] || "webm";
+}
+
 async function transcribe() {
   if (!state.recording) return;
   const button = $("#transcribeButton");
@@ -325,15 +363,30 @@ async function transcribe() {
   button.disabled = true;
   button.querySelector("span").textContent = "Preparing WAV audio";
   try {
-    const wavRecording = await convertRecordingToWav(state.recording);
+    let audioForUpload;
+    let audioFilename;
+    try {
+      audioForUpload = await convertRecordingToWav(state.recording);
+      audioFilename = "lecture.wav";
+    } catch (conversionError) {
+      if (!state.recording.type?.startsWith("audio/")) throw conversionError;
+      console.warn("Could not convert the recording to WAV; sending its browser-native format.", conversionError);
+      audioForUpload = state.recording;
+      audioFilename = `lecture.${getRecordingFileExtension(state.recording)}`;
+    }
+    if (audioForUpload.size > 25 * 1024 * 1024) {
+      throw new Error("التسجيل أكبر من الحد المسموح (25 ميجابايت). سجّل مقطعًا أقصر ثم حاول مجددًا.");
+    }
     const form = new FormData();
     form.append("apiKey", getApiKey());
-    form.append("audio", wavRecording, "lecture.wav");
+    form.append("audio", audioForUpload, audioFilename);
     button.querySelector("span").textContent = "Transcribing with Gemini";
     const response = await fetch("/studyscribe-api/transcribe", { method: "POST", body: form });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Transcription failed.");
     $("#sourceText").value = data.transcript;
+    $("#sourceText").dispatchEvent(new Event("input", { bubbles: true }));
+    state.sourceMode = "write";
     $("#writePanel").classList.add("active");
     $("#uploadPanel").classList.remove("active");
     $$(".source-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "write"));
@@ -343,6 +396,7 @@ async function transcribe() {
     $("#transcribeButton").classList.add("d-none");
     $("#recordButton").querySelector("span").textContent = "Record again";
     $("#recordButton").querySelector("i").className = "bi bi-mic-fill";
+    state.recording = null;
     showToast("Transcript added to your source.");
     document.querySelector(".composer-column").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
