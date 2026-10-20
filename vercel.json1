@@ -1,5 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/artifacts/studyscribe/index.html" }
-  ]
-}
